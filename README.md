@@ -1,36 +1,134 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🔥 LinkedIn Profile Roaster
+
+A brutally honest roasting tool for LinkedIn profiles. This app uses AI to generate witty, savage roasts based on your LinkedIn profile details.
+
+## Features
+
+- **AI-Powered Roasting** - Uses Groq's LLaMA 3.3 model to generate brutal, witty roasts
+- **LinkedIn Profile Scraping** - Automatically fetches and analyzes LinkedIn profiles
+- **Dark Mode UI** - LinkedIn-inspired dark theme with smooth animations
+- **Fast & Efficient** - Cached authentication for quick roast generation
+- **Personal Roasts** - Each roast is tailored to specific profile details, not generic
+
+## Tech Stack
+
+- **Frontend**: Next.js 15 + React + Tailwind CSS
+- **Backend**: Next.js API Routes
+- **AI**: Groq API (LLaMA 3.3 70B)
+- **Web Scraping**: Playwright
+- **Animation**: Custom CSS animations
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 18+
+- LinkedIn account credentials
+- Groq API key
+
+### Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <repo-url>
+cd linkedin-roaster
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+npm install
+npx playwright install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up environment variables in `.env.local`:
+```env
+GROQ_API_KEY=your_groq_api_key_here
+LINKEDIN_EMAIL=your_linkedin_email@example.com
+LINKEDIN_PASSWORD=your_linkedin_password
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Run the development server:
+```bash
+npm run dev
+```
 
-## Learn More
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-To learn more about Next.js, take a look at the following resources:
+## How It Works
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. User pastes a LinkedIn profile URL
+2. App logs into LinkedIn and scrapes the profile data
+3. Profile text is sent to Groq's API with a custom prompt
+4. AI generates a brutal, personalized roast
+5. Roast is displayed with smooth animations
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Roasting Features
 
-## Deploy on Vercel
+The roaster specifically targets:
+- Career stagnation (same role 2+ years)
+- Skill inflation vs. actual qualifications
+- Buzzword abuse ("synergy", "disruptive", "innovative")
+- Humble-bragging and fake humility
+- False leadership claims without actual management experience
+- Weak educational background with inflated claims
+- Generic, vague accomplishments
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## API Endpoints
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### POST `/api/roast`
+Generate a roast for a LinkedIn profile or custom text.
+
+**Request:**
+```json
+{
+  "profile": "https://www.linkedin.com/in/username"
+}
+```
+
+**Response:**
+```json
+{
+  "roast": "Your brutal roast here..."
+}
+```
+
+## Configuration
+
+- **Max tokens**: 200 (keeps roasts short and punchy)
+- **Temperature**: 0.7 (balanced creativity vs. consistency)
+- **Model**: llama-3.3-70b-versatile
+- **Browser timeout**: 15 seconds for scraping
+
+## Performance Notes
+
+- First roast (with login): ~20-30 seconds
+- Subsequent roasts: ~10-15 seconds (uses cached auth)
+- API response time: ~3-5 seconds
+
+## Legal & Ethical
+
+- Only scrape public LinkedIn profiles
+- No hate speech, slurs, or protected class attacks
+- Roasts are satirical and comedic in nature
+- Use responsibly and for entertainment purposes only
+
+## Future Improvements
+
+- [ ] Support for other social profiles
+- [ ] Custom roast intensity levels
+- [ ] Share roasts on social media
+- [ ] Roast history/favorites
+- [ ] Multi-language support
+- [ ] Web app deployment on Vercel
+
+## License
+
+MIT
+
+## Support
+
+For issues or questions, please open an issue on the repository.
+
+---
+
+Built with ❤️ and brutality 🔥
