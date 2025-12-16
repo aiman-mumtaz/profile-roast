@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[functions]
+  # This is the critical fix. It forces the binary files to be included in the zip.
+  included_files = ["node_modules/@sparticuz/chromium/bin/**"]
+  
+  # Ensure the function has time to launch the browser (26s is the safe max)
+  max_duration = 26
