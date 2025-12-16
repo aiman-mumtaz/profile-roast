@@ -1,18 +1,45 @@
+// app/api/roast/route.ts
+
 import { NextResponse } from "next/server";
 import { chromium as playwrightChromium, Route } from "playwright-core";
 import chromium_serverless from "@sparticuz/chromium";
+import * as path from 'path'; // 💡 NEW: Import path module
+import * as fs from 'fs';   // 💡 NEW: Import file system module
 
-// Shared context cache. Crucial for subsequent requests.
+// Shared context cache. 
 let cachedContext: any = null;
+let savedStorageState: string | undefined = undefined; // 💡 NEW: Variable to hold the JSON file content
+
+// 💡 NEW FUNCTION: Read the storage state file once on cold start
+function loadStorageState() {
+  if (savedStorageState) {
+    return savedStorageState;
+  }
+  
+  try {
+    // 1. Determine the correct file path. 
+    // In Netlify/Next.js environment, files in the root are accessible via the execution directory.
+    // We assume the file is correctly placed in the root directory by the build system.
+    const filePath = path.join(process.cwd(), 'linkedin_state.json');
+    
+    // 2. Read the file synchronously (safe on cold start)
+    savedStorageState = fs.readFileSync(filePath, 'utf-8');
+    console.log("Successfully loaded storage state file content.");
+    return savedStorageState;
+  } catch (e) {
+    console.error("CRITICAL: Failed to load linkedin_state.json. Check file path and existence.", e);
+    // If loading fails, let the function continue, but it will try the manual login (which will likely hit the checkpoint).
+    return undefined;
+  }
+}
 
 /**
- * Initializes or reuses an authenticated Playwright context by loading a saved session state.
+ * Initializes or reuses an authenticated Playwright context.
  */
 async function getAuthenticatedContext() {
-  // 1. Re-use cached context
+  // 1. Re-use cached context (no change)
   if (cachedContext) {
     try {
-      // QUICK TEST: Check if the context is alive.
       const page = await cachedContext.newPage();
       await page.goto("about:blank", { timeout: 1000 });
       await page.close();
@@ -29,15 +56,17 @@ async function getAuthenticatedContext() {
 
   let launchOptions: any = { headless: true, timeout: 25000 };
 
-  // --- FIX: Load Session State ---
+  // 💡 FIX: Load the storage state content here
+  const storageStateContent = isProduction ? loadStorageState() : undefined;
+
   const contextOptions: any = {
     ignoreHTTPSErrors: true,
     slowMo: 0,
-    // CRITICAL: Load the saved session state file on Netlify
-    storageState: isProduction ? './linkedin_state.json' : undefined, 
+    // CRITICAL FIX: Pass the JSON content (string) to Playwright, not a file path
+    storageState: storageStateContent, 
   };
-  // --- END FIX ---
-
+  
+  // ... (rest of launch setup remains the same) ...
   let browserExecutable = playwrightChromium;
 
   if (isProduction) {
@@ -62,7 +91,7 @@ async function getAuthenticatedContext() {
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
 
-  // HIGH PERFORMANCE: Block non-essential resources on the context level
+  // ... (Blocking resources remains here) ...
   await context.route('**/*', (route: Route) => {
     const resource = route.request().resourceType();
     if (resource === 'image' || resource === 'stylesheet' || resource === 'font') {
@@ -71,6 +100,7 @@ async function getAuthenticatedContext() {
       route.continue();
     }
   });
+
 
   // 4. Test Session State and Login
   console.log("Testing saved session state...");
@@ -87,7 +117,7 @@ async function getAuthenticatedContext() {
   }
   
   // Fallback: If redirected (session expired or missing state file), perform manual login (risky)
-  console.log("Session expired or invalid. Performing manual login...");
+  console.log("Session expired or invalid. Performing manual login... (Will likely hit checkpoint)");
   
   const email = process.env.LINKEDIN_EMAIL;
   const password = process.env.LINKEDIN_PASSWORD;
@@ -113,6 +143,7 @@ async function getAuthenticatedContext() {
     console.log("Login successful via URL check.");
     
   } catch (e) {
+    // ... (Fallback logic and checkpoint error handling remains the same) ...
     try {
         await page.waitForSelector('nav[aria-label="Primary"] a[href="/feed/"]', { timeout: 10000 });
         console.log("Login successful via element check.");
@@ -122,27 +153,18 @@ async function getAuthenticatedContext() {
         console.error("Login failed: Checkpoint detected. URL:", currentUrl);
         await context.close();
         await browser.close();
-        throw new Error(`Login failed: Checkpoint detected at ${currentUrl}. Update 'linkedin_state.json'.`);
+        throw new Error(`Login failed: Checkpoint detected at ${currentUrl}. The file loading failed.`);
     }
   }
   
-  // Save the newly successful state for the next run (overwriting the old one)
-  if (isProduction) {
-      // NOTE: This only works if your function has write access to its own directory.
-      // If it fails, you will need to manually update the file and commit again.
-      try {
-        await context.storageState({ path: './linkedin_state.json' });
-        console.log("Updated session state saved.");
-      } catch(e) {
-        console.error("Could not save new state file to Netlify environment. Will rely on manual updates.");
-      }
-  }
+  // --- Removed saving state since it won't work in this environment ---
 
   await page.close();
   cachedContext = context;
   return context;
 }
 
+// ... (POST handler and Groq logic remain unchanged) ...
 export async function POST(request: Request) {
   const { profile } = await request.json();
   let profileData = "";
