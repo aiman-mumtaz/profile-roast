@@ -2,39 +2,32 @@ import { NextResponse } from "next/server";
 import { chromium as playwrightChromium, Route } from "playwright-core";
 import chromium_serverless from "@sparticuz/chromium";
 
-// Shared context cache
+// Shared context cache. Crucial for performance (cache hit saves ~25 seconds).
 let cachedContext: any = null;
 
+/**
+ * Initializes or reuses an authenticated Playwright context.
+ */
 async function getAuthenticatedContext() {
-  // 1. Re-use cached browser context if valid
+  // 1. Re-use cached context
   if (cachedContext) {
     try {
+      // QUICK TEST: Use a very fast page load to confirm the context is alive.
       const page = await cachedContext.newPage();
-      // Block images/styles to save bandwidth
-      await page.route('**/*', (route: Route) => {
-        const resource = route.request().resourceType();
-        if (resource === 'image' || resource === 'stylesheet') {
-          route.abort();
-        } else {
-          route.continue();
-        }
-      });
-      // Simple connectivity test
-      await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 5000 });
+      await page.goto("about:blank", { timeout: 1000 });
       await page.close();
+      console.log("Reusing cached context. Cache hit!");
       return cachedContext;
     } catch (e) {
-      console.error("Cached context stale, clearing:", e);
+      console.error("Cached context stale, failed test. Initiating new session.", e);
       cachedContext = null;
     }
   }
 
-  // 2. Setup Launch Logic (Local vs. Production)
+  // 2. Setup Launch Logic (Only runs on cold start or cache miss)
   const isProduction = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
 
-  let launchOptions: any = {
-    headless: true,
-  };
+  let launchOptions: any = { headless: true, timeout: 25000 }; // 25s launch timeout
 
   const contextOptions = {
     ignoreHTTPSErrors: true,
@@ -44,32 +37,33 @@ async function getAuthenticatedContext() {
   let browserExecutable = playwrightChromium;
 
   if (isProduction) {
-    // --- Netlify Production Setup ---
+    // Netlify Production Setup
     launchOptions = {
       ...launchOptions,
-      args: chromium_serverless.args,
+      // Added --disable-setuid-sandbox for maximum stability on Linux serverless
+      args: chromium_serverless.args.concat(['--disable-setuid-sandbox']), 
       executablePath: await chromium_serverless.executablePath(),
     };
   } else {
-    // --- Local Development Setup ---
+    // Local Development Setup
     try {
       const { chromium } = require('playwright');
       browserExecutable = chromium;
     } catch (e) {
-      console.error("Local Playwright not found. Run 'npm install playwright' for local dev.", e);
       throw new Error("Local environment setup failed.");
     }
   }
 
-  // 3. Launch Browser
+  // 3. Launch Browser and Create Context
   const browser = await browserExecutable.launch(launchOptions);
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
 
-  // Block resources again for the login page
-  await page.route('**/*', (route: Route) => {
+  // HIGH PERFORMANCE: Block all non-essential resources immediately on the context level
+  await context.route('**/*', (route: Route) => {
     const resource = route.request().resourceType();
-    if (resource === 'image' || resource === 'stylesheet') {
+    // Block images, styles, AND fonts to save every millisecond during navigation
+    if (resource === 'image' || resource === 'stylesheet' || resource === 'font') {
       route.abort();
     } else {
       route.continue();
@@ -77,7 +71,7 @@ async function getAuthenticatedContext() {
   });
 
   // 4. LinkedIn Login
-  console.log("Navigating to login...");
+  console.log("Navigating to login... (Expect 20-30s on cold start)");
   await page.goto("https://www.linkedin.com/login", { waitUntil: "domcontentloaded", timeout: 15000 });
 
   const email = process.env.LINKEDIN_EMAIL;
@@ -86,16 +80,17 @@ async function getAuthenticatedContext() {
   if (!email || !password) {
     await context.close();
     await browser.close();
-    throw new Error("Missing LINKEDIN_EMAIL or LINKEDIN_PASSWORD env variables.");
+    throw new Error("Missing LinkedIn credentials.");
   }
 
+  // Type fills and click
   await page.fill('input[name="session_key"]', email);
   await page.fill('input[name="session_password"]', password);
   await page.click('button[type="submit"]');
 
-  // --- FIX APPLIED HERE: Robust Login Check ---
+  // Robust Login Check: Uses element check as a fallback to beat security redirects
   try {
-    // Option 1: Wait for the standard feed URL (increased timeout)
+    // Option 1: Wait for the standard feed URL (20s)
     await page.waitForURL("https://www.linkedin.com/feed/", { 
         waitUntil: "domcontentloaded", 
         timeout: 20000 
@@ -103,25 +98,25 @@ async function getAuthenticatedContext() {
     console.log("Login successful via URL check.");
     
   } catch (e) {
-    // Option 2: URL failed, check for a successful element (the Home link)
+    // Option 2: Fallback check for a successful element (the Home link)
     try {
         await page.waitForSelector('nav[aria-label="Primary"] a[href="/feed/"]', { timeout: 10000 });
         console.log("Login successful via element check.");
         
     } catch(e2) {
-        // Both checks failed - the browser is likely stuck on a security page.
+        // Both checks failed - assume security challenge or bad credentials.
         const currentUrl = await page.url();
-        console.error("Login failed: neither feed URL nor primary navigation element found.");
+        console.error("Login failed: neither feed URL nor primary navigation element found. URL:", currentUrl);
         
         await context.close();
         await browser.close();
         
-        throw new Error(`Login failed or hit security challenge. Current URL: ${currentUrl}. Check credentials and 2FA status.`);
+        throw new Error(`Login failed or hit security challenge. Check credentials and 2FA status.`);
     }
   }
-  // --- END FIX ---
 
   await page.close();
+  // Cache the successfully logged-in context
   cachedContext = context;
   return context;
 }
@@ -132,19 +127,12 @@ export async function POST(request: Request) {
 
   // 5. Scrape Logic
   if (profile.includes("linkedin.com")) {
+    let context: any;
+    let page: any;
     try {
-      const context = await getAuthenticatedContext();
-      const page = await context.newPage();
-
-      // Block resources
-      await page.route('**/*', (route: Route) => {
-        const resource = route.request().resourceType();
-        if (resource === 'image' || resource === 'stylesheet') {
-          route.abort();
-        } else {
-          route.continue();
-        }
-      });
+      // Must be called inside the try/catch block to handle the browser launch failure
+      context = await getAuthenticatedContext(); 
+      page = await context.newPage();
 
       let profileUrl = profile;
       if (!profileUrl.startsWith("http")) {
@@ -152,10 +140,10 @@ export async function POST(request: Request) {
       }
       
       console.log(`Scraping profile: ${profileUrl}`);
+      // Navigation should be fast on cache hit.
       await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
       
-      // Small buffer for dynamic content
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1000); 
 
       const profileText = await page.evaluate(() => {
         const bodyText = document.body.innerText;
@@ -167,12 +155,13 @@ export async function POST(request: Request) {
 
       profileData = profileText;
       await page.close();
-    } catch (error) {
-      console.error("Scraping error:", error);
-      // We don't clear cachedContext here immediately to allow retries, 
-      // but you could set cachedContext = null if you suspect the session died.
+
+    } catch (error: any) {
+      console.error("Scraping error:", error.message);
+      // Clear the cache to force a fresh session next time
+      cachedContext = null; 
       return NextResponse.json(
-        { error: "Failed to scrape profile. Ensure URL is correct and profile is public-ish." },
+        { error: `Scraping failed: ${error.message}. Likely due to 30-second cold-start timeout or LinkedIn security.` },
         { status: 400 }
       );
     }
@@ -180,7 +169,7 @@ export async function POST(request: Request) {
     profileData = profile;
   }
 
-  // 6. Groq / AI Logic
+  // 6. Groq / AI Logic (Remains unchanged)
   try {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -218,18 +207,16 @@ export async function POST(request: Request) {
           },
           {
             role: "user",
-            content: `Roast this LinkedIn profile based on this data:\n\n${profileData.substring(0, 10000)}`, // Limit char count for API safety
+            content: `Roast this LinkedIn profile based on this data:\n\n${profileData.substring(0, 10000)}`,
           },
         ],
       }),
     });
 
     const data = await response.json();
-
     if (!response.ok) {
       throw new Error(data.error?.message || "Groq API error");
     }
-
     return NextResponse.json({ roast: data.choices?.[0]?.message?.content });
 
   } catch (error: any) {
