@@ -45,7 +45,6 @@ async function getAuthenticatedContext() {
 
   if (isProduction) {
     // --- Netlify Production Setup ---
-    // Because of serverExternalPackages in next.config.ts, this now works standardly
     launchOptions = {
       ...launchOptions,
       args: chromium_serverless.args,
@@ -94,18 +93,33 @@ async function getAuthenticatedContext() {
   await page.fill('input[name="session_password"]', password);
   await page.click('button[type="submit"]');
 
-  // Wait for feed to confirm login
+  // --- FIX APPLIED HERE: Robust Login Check ---
   try {
-    await page.waitForURL("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 20000 });
+    // Option 1: Wait for the standard feed URL (increased timeout)
+    await page.waitForURL("https://www.linkedin.com/feed/", { 
+        waitUntil: "domcontentloaded", 
+        timeout: 20000 
+    });
+    console.log("Login successful via URL check.");
+    
   } catch (e) {
-    console.error("Login timeout or failure:", e);
-    const currentUrl = await page.url();
-    if (!currentUrl.includes("feed")) {
-      await context.close();
-      await browser.close();
-      throw new Error("Login failed. Possible 2FA or bad credentials.");
+    // Option 2: URL failed, check for a successful element (the Home link)
+    try {
+        await page.waitForSelector('nav[aria-label="Primary"] a[href="/feed/"]', { timeout: 10000 });
+        console.log("Login successful via element check.");
+        
+    } catch(e2) {
+        // Both checks failed - the browser is likely stuck on a security page.
+        const currentUrl = await page.url();
+        console.error("Login failed: neither feed URL nor primary navigation element found.");
+        
+        await context.close();
+        await browser.close();
+        
+        throw new Error(`Login failed or hit security challenge. Current URL: ${currentUrl}. Check credentials and 2FA status.`);
     }
   }
+  // --- END FIX ---
 
   await page.close();
   cachedContext = context;
