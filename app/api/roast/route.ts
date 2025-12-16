@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { chromium } from "playwright";
+// Import playwright-core for types and the chromium executable reference
+import { chromium as playwrightChromium, Route } from "playwright-core";
+// Import the serverless optimized chromium package
+import chromium_serverless from "@sparticuz/chromium"; 
+
+// --- Conditional Imports for Local Development ---
+// We use 'require' here inside the function to avoid errors when bundling for Netlify.
+// We only import the full 'playwright' package if NOT in production.
 
 // Shared context cache
 let cachedContext: any = null;
@@ -10,19 +17,77 @@ async function getAuthenticatedContext() {
         try {
             // Test if context is still valid by checking a page
             const page = await cachedContext.newPage();
+            
+            // TypeScript Fix: Explicitly type 'route' as Route
+            await page.route('**/*', (route: Route) => {
+                if (route.request().resourceType() === 'image' || route.request().resourceType() === 'stylesheet') {
+                    route.abort();
+                } else {
+                    route.continue();
+                }
+            });
             await page.goto("https://www.linkedin.com/feed/", { waitUntil: "load", timeout: 5000 });
             await page.close();
             return cachedContext;
         } catch (e) {
-            // Context is stale, clear it
+            console.error("Cached context stale or failed test, clearing cache:", e);
             cachedContext = null;
         }
     }
 
-    // Create new authenticated context
-    const browser = await chromium.launch();
-    const context = await browser.newContext();
+    // --- Conditional Launch Logic ---
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
+
+    // 1. Launch Options (related to the executable itself)
+    let launchOptions: any = {
+        headless: true,
+    };
+    
+    // 2. Context Options (related to the browser session/page)
+    const contextOptions = {
+        // Properties moved here (TypeScript Fix):
+        ignoreHTTPSErrors: true,
+        slowMo: 0, 
+    };
+
+    let browserExecutable = playwrightChromium;
+
+    if (isProduction) {
+        // Netlify/Lambda Production Configuration
+        launchOptions = {
+            ...launchOptions,
+            args: chromium_serverless.args,
+            executablePath: await chromium_serverless.executablePath(),
+        };
+    } else {
+        // Local/Development Configuration (uses locally installed Playwright package)
+        try {
+            // We use require to load the full 'playwright' package only when needed locally
+            const { chromium } = require('playwright');
+            browserExecutable = chromium;
+        } catch (e) {
+            console.error("Local Playwright dependency failed to load. Did you run 'npm install playwright' and 'npx playwright install'?", e);
+            throw new Error("Local environment setup failed.");
+        }
+    }
+    // --- End Conditional Logic ---
+
+
+    // Launch the browser
+    const browser = await browserExecutable.launch(launchOptions);
+    
+    // Create new context with ContextOptions
+    const context = await browser.newContext(contextOptions); 
     const page = await context.newPage();
+
+    // TypeScript Fix: Explicitly type 'route' as Route
+    await page.route('**/*', (route: Route) => {
+        if (route.request().resourceType() === 'image' || route.request().resourceType() === 'stylesheet') {
+            route.abort();
+        } else {
+            route.continue();
+        }
+    });
 
     // Login to LinkedIn
     await page.goto("https://www.linkedin.com/login", { waitUntil: "load", timeout: 15000 });
@@ -33,7 +98,7 @@ async function getAuthenticatedContext() {
     if (!email || !password) {
         await context.close();
         await browser.close();
-        throw new Error("LinkedIn credentials not configured. Please set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env.local");
+        throw new Error("LinkedIn credentials not configured. Please set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in Netlify environment settings.");
     }
 
     // Enter credentials
@@ -43,9 +108,15 @@ async function getAuthenticatedContext() {
 
     // Wait for login to complete
     try {
-        await page.waitForNavigation({ waitUntil: "load", timeout: 15000 });
+        await page.waitForURL("https://www.linkedin.com/feed/", { waitUntil: "load", timeout: 20000 });
     } catch (e) {
-        // Continue anyway
+        console.error("Login failed or timed out. Check for two-factor auth or error messages:", e);
+        
+        if (await page.url() !== "https://www.linkedin.com/feed/") {
+             await context.close();
+             await browser.close();
+             throw new Error("Login failed. Check credentials, 2FA status, or LinkedIn security.");
+        }
     }
 
     await page.close();
@@ -60,8 +131,18 @@ export async function POST(request: Request) {
 
     if (profile.includes("linkedin.com")) {
         try {
+            // This function call is now safe for both local and Netlify environments
             const context = await getAuthenticatedContext();
             const page = await context.newPage();
+            
+            // TypeScript Fix: Explicitly type 'route' as Route
+            await page.route('**/*', (route: Route) => {
+                if (route.request().resourceType() === 'image' || route.request().resourceType() === 'stylesheet') {
+                    route.abort();
+                } else {
+                    route.continue();
+                }
+            });
 
             // Navigate to the profile URL
             let profileUrl = profile;
@@ -75,22 +156,30 @@ export async function POST(request: Request) {
 
             // Extract profile information
             const profileText = await page.evaluate(() => {
-                return document.body.innerText;
+                const bodyText = document.body.innerText;
+                const cleanedText = bodyText
+                    .replace(/Follow|Connect|Message|Premium|Promoted|Skip to main content/g, '')
+                    .replace(/\s\s+/g, ' ') 
+                    .trim();
+                return cleanedText;
             });
 
             profileData = profileText;
             await page.close();
         } catch (error) {
-            console.log("Error scraping LinkedIn:", error);
-            cachedContext = null; // Clear cache on error
+            // This catches the timeout and the environment errors
+            console.error("Error scraping LinkedIn:", error);
+            cachedContext = null; 
             return NextResponse.json(
-                { error: "Failed to fetch LinkedIn profile. Make sure you've set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env.local and the profile URL is correct." },
+                { error: "Failed to fetch LinkedIn profile. Please ensure Netlify environment variables are set and the function is not timing out." },
                 { status: 400 }
             );
         }
     } else {
         profileData = profile;
     }
+
+    // --- Groq API Call ---
 
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions",
         {
