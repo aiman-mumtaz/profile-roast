@@ -1,217 +1,65 @@
 import { NextResponse } from "next/server";
-import { chromium as playwrightChromium, Route, Response } from "playwright-core";
-import chromium_serverless from "@sparticuz/chromium";
-import * as path from 'path';
-import * as fs from 'fs';
-
-// Shared context cache. Crucial for subsequent requests (warm starts).
-let cachedContext: any = null;
-// Stores the parsed JavaScript Object from the state file.
-let savedStorageState: object | undefined = undefined; 
-
-/**
- * Reads the 'linkedin_state.json' file content, parses it, and caches the object.
- */
-function loadStorageState(): object | undefined {
-  if (savedStorageState) {
-    return savedStorageState;
-  }
-  
-  try {
-    const filePath = path.join(process.cwd(), 'linkedin_state.json');
-    const fileContentString = fs.readFileSync(filePath, 'utf-8');
-    
-    // CRITICAL FIX: Parse the string into a JavaScript OBJECT
-    savedStorageState = JSON.parse(fileContentString);
-    
-    console.log("Successfully loaded and PARSED storage state object.");
-    return savedStorageState;
-  } catch (e) {
-    console.error("CRITICAL: Failed to load or parse linkedin_state.json. Falling back to manual login.", e);
-    return undefined;
-  }
-}
-
-/**
- * Initializes or reuses an authenticated Playwright context, prioritizing saved state.
- */
-async function getAuthenticatedContext() {
-  // 1. Re-use cached context
-  if (cachedContext) {
-    try {
-      const page = await cachedContext.newPage();
-      await page.goto("about:blank", { timeout: 1000 });
-      await page.close();
-      console.log("Reusing cached context. Cache hit!");
-      return cachedContext;
-    } catch (e) {
-      console.error("Cached context stale, initiating new session.", e);
-      cachedContext = null;
-    }
-  }
-
-  // 2. Setup Launch Logic
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
-
-  let launchOptions: any = { headless: true, timeout: 25000 };
-  
-  const storageStateObject = isProduction ? loadStorageState() : undefined;
-
-  const contextOptions: any = {
-    ignoreHTTPSErrors: true,
-    slowMo: 0,
-    // Pass the actual JAVASCRIPT OBJECT to storageState
-    storageState: storageStateObject, 
-  };
-  
-  let browserExecutable = playwrightChromium;
-
-  if (isProduction) {
-    // Netlify Production Setup
-    launchOptions = {
-      ...launchOptions,
-      args: chromium_serverless.args.concat(['--disable-setuid-sandbox']), 
-      executablePath: await chromium_serverless.executablePath(),
-    };
-  } else {
-    try {
-      const { chromium } = require('playwright');
-      browserExecutable = chromium;
-    } catch (e) {
-      throw new Error("Local environment setup failed.");
-    }
-  }
-
-  const browser = await browserExecutable.launch(launchOptions);
-  const context = await browser.newContext(contextOptions);
-
-  const page = await context.newPage();
-
-  await context.route('**/*', (route: Route) => {
-    const resource = route.request().resourceType();
-    if (resource === 'image' || resource === 'stylesheet' || resource === 'font') {
-      route.abort();
-    } else {
-      route.continue();
-    }
-  });
-
-  if (storageStateObject) {
-      console.log("Session state loaded successfully. Trusting state and bypassing login test.");
-      await page.close();
-      cachedContext = context;
-      return context;
-  }
-  
-  console.log("Storage state was NOT loaded. Performing manual login... (Will likely hit checkpoint)");
-  
-  const email = process.env.LINKEDIN_EMAIL;
-  const password = process.env.LINKEDIN_PASSWORD;
-
-  if (!email || !password) {
-    await context.close();
-    await browser.close();
-    throw new Error("Missing LinkedIn credentials.");
-  }
-  
-  if (!page.url().includes("login")) {
-      await page.goto("https://www.linkedin.com/login", { waitUntil: "domcontentloaded", timeout: 15000 });
-  }
-
-  await page.fill('input[name="session_key"]', email);
-  await page.fill('input[name="session_password"]', password);
-  await page.click('button[type="submit"]');
-
-  // Robust Login Check 
-  try {
-    await page.waitForURL("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 20000 });
-    console.log("Login successful via URL check.");
-    
-  } catch (e) {
-    try {
-        await page.waitForSelector('nav[aria-label="Primary"] a[href="/feed/"]', { timeout: 10000 });
-        console.log("Login successful via element check.");
-        
-    } catch(e2) {
-        const currentUrl = await page.url();
-        console.error("Login failed: Checkpoint detected. URL:", currentUrl);
-        await context.close();
-        await browser.close();
-        throw new Error(`Login failed: Checkpoint detected at ${currentUrl}. Check credentials or 'linkedin_state.json'.`);
-    }
-  }
-
-  await page.close();
-  cachedContext = context;
-  return context;
-}
 
 export async function POST(request: Request) {
-  const { profile } = await request.json();
-  let profileData = "";
-
-  // 5. Scrape Logic
-  if (profile.includes("linkedin.com")) {
-    let context: any;
-    let page: any;
-    try {
-      context = await getAuthenticatedContext(); 
-      page = await context.newPage();
-
-      let profileUrl = profile;
-      if (!profileUrl.startsWith("http")) {
-        profileUrl = "https://" + profileUrl;
-      }
-      
-      console.log(`Scraping profile: ${profileUrl}`);
-      
-      // 🚀 FINAL TIMEOUT FIX: Using domcontentloaded with a 45-second timeout.
-      // Requires netlify.toml to set function timeout = 60.
-      await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 45000 }); 
-      
-      // Minimal buffer before scraping
-      await page.waitForTimeout(500); 
-
-      // Fallback to basic innerText scraping, as API interception proved unreliable
-      const profileText = await page.evaluate(() => {
-        const bodyText = document.body.innerText;
-        return bodyText
-          .replace(/Follow|Connect|Message|Premium|Promoted|Skip to main content/g, '')
-          .replace(/\s\s+/g, ' ')
-          .trim();
-      });
-
-      profileData = profileText;
-      await page.close();
-
-    } catch (error: any) {
-      console.error("Scraping error:", error.message);
-      cachedContext = null; 
-      return NextResponse.json(
-        { error: `Scraping failed: ${error.message}. Please verify the function timeout and memory limits.` },
-        { status: 400 }
-      );
-    }
-  } else {
-    profileData = profile;
-  }
-
-  // 6. Groq / AI Logic (Unchanged)
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const { profile } = await request.json();
+    if (!profile) return NextResponse.json({ error: "URL required" }, { status: 400 });
+    if(profile.includes("aiman-mumtaz")){
+        return NextResponse.json({ roast: "Ah, trying to roast the creator?? Bold move 🤣? But Aiman's LinkedIn is untouchable. Try someone else you unemployed peasant!!" });
+    }
+    const apifyToken = process.env.APIFY_TOKEN;
+    const groqKey = process.env.GROQ_API_KEY;
+
+    console.log(`🚀 Starting stable scrape for: ${profile}`);
+
+
+    // 'supreme_coder~linkedin-profile-scraper' Apify actor - limited fields for performance
+    const apifyUrl = `https://api.apify.com/v2/acts/supreme_coder~linkedin-profile-scraper/run-sync-get-dataset-items?token=${apifyToken}&fields=firstName,headline,summary,positions,educations,certifications,skills,projects,followersCount,isVerified,volunteerExperiences`;
+
+    const apifyResponse = await fetch(apifyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        urls: [{ url: profile }],
+      }),
+    });
+
+    if (!apifyResponse.ok) {
+        return NextResponse.json({ error: "Scraping timed out or failed. Try again." }, { status: 504 });
+    }
+
+    const dataset = await apifyResponse.json();
+    
+    if (!Array.isArray(dataset) || dataset.length === 0) {
+      console.error("Empty dataset returned from Apify");
+      return NextResponse.json({ error: "No profile data found. The profile might be private." }, { status: 404 });
+    }
+
+    const profileData = dataset[0];
+
+    if (!profileData || profileData.error) {
+      console.error("Profile data missing or contains error:", profileData);
+      return NextResponse.json({ error: "Could not find profile. It may be private or restricted." }, { status: 404 });
+    }
+
+    console.log("Profile Data fetched successfully");
+
+    const completion = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${groqKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
-        temperature: 0.7,
-        max_tokens: 350,
+        // OPTIMIZATION : Set a lower max_tokens to prevent rambling
+        max_tokens: 300,
+        temperature: 0.8,
         messages: [
           {
             role: "system",
             content: `
+<<<<<<< HEAD
                 You are a brutally honest roaster who exposes LinkedIn's delusional narratives with surgical precision.
 
                 Rules:
@@ -233,26 +81,44 @@ export async function POST(request: Request) {
                 - Make it so accurate it stings
 
               `,
+=======
+                You are a savage LinkedIn roaster. 
+                Focus on corporate buzzwords, inflated titles, and delusional summaries.
+                CRITICAL: Your response MUST end with a complete, punchy sentence. 
+                Do not ramble. If you are reaching your limit, wrap up the joke immediately.
+                Keep the total length under 400 words.
+                Use a brutally sarcastic and witty tone with piercing humor.
+                Add emojis at 3-4 places for humor.`
+>>>>>>> 90862a453ef69c75099c865a7bdbede894866e24
           },
           {
             role: "user",
-            content: `Roast this LinkedIn profile based on this data:\n\n${profileData.substring(0, 10000)}`,
-          },
+            content: `Roast this person: ${JSON.stringify({
+                name: profileData.firstName,
+                headline: profileData.headline,
+                about: profileData.summary,
+                experience: profileData.positions?.slice(0, 2), // Limited context size for speed
+                certifications: profileData.certifications,
+                skills: profileData.skills,
+                education: profileData.educations,
+                projects: profileData.projects,
+                followers: profileData.followersCount,
+                isVerified: profileData.isVerified,
+                volunteer: profileData.volunteerExperiences
+            })}`
+            // content: `Roast this person based on their JSON data: ${JSON.stringify(profileData)}`
+          }
         ],
-      }),
+        // OPTIMIZATION : Disable stream
+        stream: false
+      })
     });
 
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Groq API error");
-    }
-    return NextResponse.json({ roast: data.choices?.[0]?.message?.content });
+    const aiData = await completion.json();
+    return NextResponse.json({ roast: aiData.choices[0].message.content });
 
   } catch (error: any) {
-    console.error("AI Generation Error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate roast." },
-      { status: 500 }
-    );
+    console.error("Final Route Error:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
