@@ -1,9 +1,10 @@
-# 🔥 LinkedIn Profile Roaster
+# 🔥 Social Profile Roaster (Linkedin & Github)
 
-A brutally honest roasting tool for LinkedIn profiles. This app uses AI to generate witty, savage roasts based on your LinkedIn profile details.
+A brutally honest, dual-platform roasting tool. This app uses AI to generate witty, savage roasts based on your professional presence—whether you're a "Corporate LinkedIn Guru" or a "GitHub Green Square Addict"
 
-## Features
+## New Features
 
+- **Dual-Mode UI** - Brand-matching themes for both LinkedIn (Corporate Blue) and GitHub (Dev Green) with a unified Design System
 - **AI-Powered Roasting** - Uses Groq's LLaMA 3.3 model to generate brutal, witty roasts
 - **LinkedIn Profile Scraping** - Automatically fetches and analyzes LinkedIn profiles
 - **Dark Mode UI** - LinkedIn-inspired dark theme with smooth animations
@@ -17,6 +18,12 @@ A brutally honest roasting tool for LinkedIn profiles. This app uses AI to gener
 - **AI**: Groq API (llama-3.3-70b-versatile)
 - **Animation**: Native CSS animations (keyframes)
 - **Deployment**: Vercel (with GitHub integration)
+
+## Navigation Structure
+The app is now structured to support parallel platform experiences:
+
+- **/linkedin** - The Corporate Grind Roast 
+- **/github** - The Code Monkey Roast 
 
 ## Getting Started
 
@@ -100,12 +107,13 @@ Generate a roast for a LinkedIn profile or custom text.
 
 ## Future Improvements
 
-- [ ] Support for other social profiles
+- [x] Support for other social profiles (Github Added)
 - [ ] Custom roast intensity levels
 - [ ] Share roasts on social media
 - [ ] Roast history/favorites
 - [ ] Multi-language support
 - [ ] Analytics dashboard
+- [ ] Export roasts as high-quality PNGs for sharing
 
 ## License
 
