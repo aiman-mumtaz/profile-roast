@@ -1,6 +1,6 @@
 # 🔥 Social Profile Roaster (Linkedin & Github)
 
-A brutally honest, dual-platform roasting tool. This app uses AI to generate witty, savage roasts based on your professional presence—whether you're a "Corporate LinkedIn Guru" or a "GitHub Green Square Addict"
+A brutally honest, dual-platform roasting tool. This app uses AI to generate witty, savage roasts based on your professional presence - whether you're a "Corporate LinkedIn Guru" or a "GitHub Green Square Addict"
 
 ## New Features
 
