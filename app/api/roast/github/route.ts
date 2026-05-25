@@ -63,6 +63,17 @@ export async function POST(request: Request) {
     });
 
     const aiData = await completion.json();
+    
+    if (!completion.ok) {
+      console.error("Groq API error:", aiData);
+      return NextResponse.json({ error: "AI service error. Try again." }, { status: 500 });
+    }
+
+    if (!aiData.choices || !aiData.choices[0] || !aiData.choices[0].message) {
+      console.error("Invalid Groq response structure:", aiData);
+      return NextResponse.json({ error: "Failed to generate roast. Try again." }, { status: 500 });
+    }
+
     return NextResponse.json({ roast: aiData.choices[0].message.content });
 
   } catch (error: any) {
