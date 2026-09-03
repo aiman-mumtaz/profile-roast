@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { completeRoast } from "../../../lib/roast";
 
 export async function POST(request: Request) {
   try {
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: groqModel,
         // OPTIMIZATION : Set a lower max_tokens to prevent rambling
-        max_tokens: 300,
+        max_tokens: 450,
         temperature: 0.8,
         messages: [
           {
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
             content: `
                 You are a savage LinkedIn roaster. 
                 Focus on corporate buzzwords, inflated titles, and delusional summaries.
-                CRITICAL: Your response MUST end with a complete, punchy sentence. 
+                CRITICAL: End with one complete, meaningful punchline or advice sentence. Never end on a fragment, label, comma, or unfinished thought.
                 Do not ramble. If you are reaching your limit, wrap up the joke immediately.
                 Keep the total length under 400 words.
                 Use a brutally sarcastic and witty tone with piercing humor.
@@ -108,7 +109,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to generate roast. Try again." }, { status: 500 });
     }
 
-    return NextResponse.json({ roast: aiData.choices[0].message.content });
+    const roast = completeRoast(
+      aiData.choices[0].message.content,
+      "This profile has potential, but it needs fewer buzzwords and more proof."
+    );
+
+    return NextResponse.json({ roast });
 
   } catch (error: any) {
     console.error("Final Route Error:", error.message);

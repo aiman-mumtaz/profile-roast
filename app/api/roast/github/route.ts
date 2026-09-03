@@ -1,23 +1,5 @@
 import { NextResponse } from "next/server";
-
-function limitToCompleteRoast(text: string): string {
-  const words = text.trim().split(/\s+/);
-  const limitedText = words.slice(0, 300).join(" ");
-
-  if (words.length <= 300 && /[.!?]$/.test(limitedText)) {
-    return limitedText;
-  }
-
-  const lastSentenceEnd = Math.max(
-    limitedText.lastIndexOf("."),
-    limitedText.lastIndexOf("!"),
-    limitedText.lastIndexOf("?")
-  );
-
-  return lastSentenceEnd >= 0
-    ? limitedText.slice(0, lastSentenceEnd + 1)
-    : `${limitedText}.`;
-}
+import { completeRoast } from "../../../lib/roast";
 
 export async function POST(request: Request) {
   try {
@@ -101,7 +83,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to generate roast. Try again." }, { status: 500 });
     }
 
-    const roast = limitToCompleteRoast(aiData.choices[0].message.content);
+    const roast = completeRoast(
+      aiData.choices[0].message.content,
+      "This profile needs fewer unfinished commits and more completed projects."
+    );
 
     return NextResponse.json({ roast });
 
