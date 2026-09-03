@@ -5,6 +5,7 @@ import Header from "../components/Header";
 
 export default function Home() {
   const [profile, setProfile] = useState("");
+  const [intensity, setIntensity] = useState("savage");
   const [roast, setRoast] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +17,7 @@ export default function Home() {
     const res = await fetch("/api/roast/linkedin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile }),
+      body: JSON.stringify({ profile, intensity }),
     });
 
     const data = await res.json();
@@ -53,6 +54,22 @@ export default function Home() {
               value={profile}
               onChange={(e) => setProfile(e.target.value)}
             />
+          </div>
+
+          <div className="space-y-2 mb-6">
+            <label className="block text-sm font-semibold text-gray-300" htmlFor="roast-intensity">
+              Roast Intensity
+            </label>
+            <select
+              id="roast-intensity"
+              className="w-full px-4 py-2.5 border border-slate-600 rounded-lg bg-slate-800 text-gray-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              value={intensity}
+              onChange={(e) => setIntensity(e.target.value)}
+            >
+              <option value="light">Light: playful teasing</option>
+              <option value="balanced">Balanced: sharp and funny</option>
+              <option value="savage">Savage: no mercy</option>
+            </select>
           </div>
 
           <button

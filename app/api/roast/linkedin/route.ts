@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
   try {
-    const { profile } = await request.json();
+    const { profile, intensity } = await request.json();
     if (!profile) return NextResponse.json({ error: "URL required" }, { status: 400 });
     if(profile.includes("aiman-mumtaz")){
         return NextResponse.json({ roast: "Ah, trying to roast the creator?? Bold move 🤣? But Aiman's LinkedIn is untouchable. Try someone else you unemployed peasant!!" });
@@ -10,6 +10,12 @@ export async function POST(request: Request) {
     const apifyToken = process.env.APIFY_TOKEN;
     const groqKey = process.env.GROQ_API_KEY;
     const groqModel = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+    const intensityKey = typeof intensity === "string" ? intensity : "savage";
+    const roastIntensity = ({
+      light: "Keep the humor playful and gentle; avoid harsh insults.",
+      balanced: "Use sharp, sarcastic humor while keeping the insults moderate.",
+      savage: "Use ruthless, brutally sarcastic humor with no mercy.",
+    } as Record<string, string>)[intensityKey] ?? "Use ruthless, brutally sarcastic humor with no mercy.";
 
     console.log(`Starting stable scrape for: ${profile}`);
 
@@ -64,7 +70,8 @@ export async function POST(request: Request) {
                 Do not ramble. If you are reaching your limit, wrap up the joke immediately.
                 Keep the total length under 400 words.
                 Use a brutally sarcastic and witty tone with piercing humor.
-                Add emojis at 3-4 places for humor.`
+                Add emojis at 3-4 places for humor.
+                Intensity: ${roastIntensity}`
           },
           {
             role: "user",
