@@ -5,7 +5,8 @@ A brutally honest, dual-platform roasting tool. This app uses AI to generate wit
 ## New Features
 
 - **Dual-Mode UI** - Brand-matching themes for both LinkedIn (Corporate Blue) and GitHub (Dev Green) with a unified Design System
-- **AI-Powered Roasting** - Uses Groq's LLaMA 3.3 model to generate brutal, witty roasts
+- **AI-Powered Roasting** - Uses openai/gpt-oss-120b model to generate brutal, witty roasts
+- - **Custom Intensity Roasts** - User can select the intensity of roasts - Light, Balanced or Savage
 - **LinkedIn Profile Scraping** - Automatically fetches and analyzes LinkedIn profiles
 - **Fast & Efficient** - Cached authentication for quick roast generation
 - **Personal Roasts** - Each roast is tailored to specific profile details, not generic
@@ -107,7 +108,7 @@ Generate a roast for a LinkedIn profile or custom text.
 ## Future Improvements
 
 - [x] Support for other social profiles (Github Added)
-- [ ] Custom roast intensity levels
+- [x] Custom roast intensity levels
 - [ ] Share roasts on social media
 - [ ] Roast history/favorites
 - [ ] Multi-language support

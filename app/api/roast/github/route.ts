@@ -1,8 +1,27 @@
 import { NextResponse } from "next/server";
 
+function limitToCompleteRoast(text: string): string {
+  const words = text.trim().split(/\s+/);
+  const limitedText = words.slice(0, 300).join(" ");
+
+  if (words.length <= 300 && /[.!?]$/.test(limitedText)) {
+    return limitedText;
+  }
+
+  const lastSentenceEnd = Math.max(
+    limitedText.lastIndexOf("."),
+    limitedText.lastIndexOf("!"),
+    limitedText.lastIndexOf("?")
+  );
+
+  return lastSentenceEnd >= 0
+    ? limitedText.slice(0, lastSentenceEnd + 1)
+    : `${limitedText}.`;
+}
+
 export async function POST(request: Request) {
   try {
-    const { profile } = await request.json(); // Expected: GitHub username
+    const { profile, intensity } = await request.json(); // Expected: GitHub username
     if (!profile) return NextResponse.json({ error: "Username required" }, { status: 400 });
 
     if(profile.toLowerCase() === "aiman-mumtaz") {
@@ -10,6 +29,13 @@ export async function POST(request: Request) {
     }
 
     const groqKey = process.env.GROQ_API_KEY;
+    const groqModel = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+    const intensityKey = typeof intensity === "string" ? intensity : "savage";
+    const roastIntensity = ({
+      light: "Keep the humor playful and gentle; avoid harsh insults.",
+      balanced: "Use sharp, sarcastic humor while keeping the insults moderate.",
+      savage: "Use ruthless, brutally sarcastic humor with no mercy.",
+    } as Record<string, string>)[intensityKey] ?? "Use ruthless, brutally sarcastic humor with no mercy.";
 
     // Fetch GitHub Data
     const userRes = await fetch(`https://api.github.com/users/${profile}`);
@@ -33,8 +59,8 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        max_tokens: 300,
+        model: groqModel,
+        max_tokens: 450,
         temperature: 0.8,
         messages: [
           {
@@ -43,8 +69,9 @@ export async function POST(request: Request) {
                 You are a funny but toxic GitHub auditor. 
                 Mock their contribution frequency, generic projects, lack of stars, and weird bio. Address in First Person directly.
                 If they have no repositories, mock their 'ghost' presence and if they have too many repositories mock that as well.
-                CRITICAL: Use coding puns and brutally witty humor, try to keep every insult unique. End with a complete sentence. Also end with an advice.
-                Keep it under 300 words. Add 3-4 coding-related emojis.`
+                CRITICAL: Use coding puns and brutally witty humor, try to keep every insult unique. End with a complete sentence and advice.
+                Keep the roast between 150 and 280 words, and never stop mid-sentence. Add 3-4 coding-related emojis.
+                Intensity: ${roastIntensity}`
           },
           {
             role: "user",
@@ -74,7 +101,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to generate roast. Try again." }, { status: 500 });
     }
 
-    return NextResponse.json({ roast: aiData.choices[0].message.content });
+    const roast = limitToCompleteRoast(aiData.choices[0].message.content);
+
+    return NextResponse.json({ roast });
 
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
