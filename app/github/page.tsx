@@ -4,6 +4,7 @@ import Header from "../components/Header";
 
 export default function GitHubRoaster() {
   const [username, setUsername] = useState("");
+  const [intensity, setIntensity] = useState("savage");
   const [roast, setRoast] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -15,7 +16,7 @@ export default function GitHubRoaster() {
     const res = await fetch("/api/roast/github", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile: username }),
+      body: JSON.stringify({ profile: username, intensity }),
     });
 
     const data = await res.json();
@@ -39,6 +40,20 @@ export default function GitHubRoaster() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
+
+          <label className="block text-sm font-bold text-gray-300 mb-2" htmlFor="roast-intensity">
+            Roast Intensity
+          </label>
+          <select
+            id="roast-intensity"
+            className="w-full px-4 py-3 mb-4 bg-slate-800 border border-slate-700 rounded text-gray-100 focus:outline-none focus:border-emerald-500"
+            value={intensity}
+            onChange={(e) => setIntensity(e.target.value)}
+          >
+            <option value="light">Light: playful teasing</option>
+            <option value="balanced">Balanced: sharp and funny</option>
+            <option value="savage">Savage: no mercy</option>
+          </select>
 
           <button
             onClick={generateRoast}
